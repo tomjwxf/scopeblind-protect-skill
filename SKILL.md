@@ -1,109 +1,105 @@
 ---
-name: scopeblind-protect
+name: scopeblind
 description: >
-  Wrap MCP servers with per-tool policies and signed receipts using protect-mcp.
-  Shadow mode logs everything. Enforce mode applies rules. Receipts verify offline.
+  Trust infrastructure for AI agents. Create portable identities with passport,
+  enforce per-tool policies with protect-mcp, verify receipts offline with
+  @veritasacta/verify, and benchmark policies with red-team. Every action
+  produces cryptographic evidence — independently verifiable by anyone.
 metadata:
   emoji: 🛡️
   requires:
     bins:
       - npx
+      - curl
     env: []
   install: |
-    npm install -g protect-mcp@latest
-  license: FSL-1.1-MIT
+    npm install -g protect-mcp@latest @scopeblind/passport@latest
+  license: MIT
   allowed-tools:
     - Bash
     - Read
     - Write
 ---
 
-# ScopeBlind Protect — MCP Security Gateway
+# ScopeBlind — Trust Infrastructure for AI Agents
 
 ## What This Skill Does
 
-This skill wraps MCP tool calls through protect-mcp, adding:
+This skill gives your agent a cryptographic identity, enforces per-tool policies,
+and produces independently verifiable proof of every decision.
 
-- **Shadow mode** — logs every tool call without blocking (default)
-- **Per-tool policies** — block, rate-limit, or require approval for specific tools
-- **Signed receipts** — Ed25519-signed proof of every decision (when signing configured)
-- **Policy simulation** — dry-run a policy against recorded tool calls before enforcing
-- **Compliance reports** — generate audit reports from receipt history
+Four tools, one stack:
 
-## Setup
+- **@scopeblind/passport** — create portable agent identity (Ed25519 keypairs, signed manifests)
+- **protect-mcp** — wrap MCP servers with per-tool policies and signed receipts
+- **@veritasacta/verify** — verify any receipt offline (MIT, no accounts, no API calls)
+- **@scopeblind/red-team** — benchmark policies against attack patterns
 
-### First Run
+## Agent Identity
+
+### "Create an identity for this agent" / "Give me a passport"
 
 ```bash
-# Generate signing keys + default policy
+npx @scopeblind/passport create --name "Luna" --runtime openclaw --policy shadow
+```
+
+Creates a portable agent pack with:
+- manifest.json — signed identity (name, capabilities, public key)
+- passport.bundle.json — portable credential bundle
+- keys/gateway.json — Ed25519 signing keypair
+- protect-mcp.json — default policy
+- VERIFY.md — instructions for anyone to verify this agent's identity
+
+### "Wrap my existing MCP setup" / "Add security to my agent"
+
+```bash
+npx @scopeblind/passport wrap --runtime openclaw --config ./openclaw.json --policy email-safe
+```
+
+### "Publish my agent to the registry"
+
+```bash
+npx @scopeblind/passport publish --registry https://evidence-indexer.tomjwxf.workers.dev
+```
+
+### "Verify another agent's identity"
+
+```bash
+npx @scopeblind/passport verify-agent --kid <agent-kid> --registry https://evidence-indexer.tomjwxf.workers.dev
+```
+
+## MCP Security Gateway
+
+### "Set up protect-mcp" / "Start logging tool calls"
+
+```bash
 npx protect-mcp init
-
-# Verify the setup
-npx protect-mcp status
+npx protect-mcp -- node server.js
 ```
 
-This creates:
-- `keys/gateway.json` — Ed25519 signing keypair
-- `protect-mcp.json` — default shadow-mode policy
-
-### Wrapping MCP Servers
-
-For each MCP server, wrap it through protect-mcp in the client config:
-
-**Claude Desktop / Cursor config:**
-```json
-{
-  "mcpServers": {
-    "my-server": {
-      "command": "npx",
-      "args": ["protect-mcp", "--policy", "protect-mcp.json", "--enforce", "--", "node", "my-server.js"]
-    }
-  }
-}
-```
-
-## Commands
-
-Execute these when the user asks:
-
-### "Set up protect-mcp" / "Add security to my MCP server"
-
-```bash
-npx protect-mcp init
-```
-
-Show the generated config and explain the default policy.
-
-### "What tools are being called?" / "Show me what my agent is doing"
-
-```bash
-npx protect-mcp status
-```
-
-### "Show today's activity" / "What happened today?"
-
-```bash
-npx protect-mcp digest --today
-```
-
-### "Test this policy before enforcing" / "Simulate a stricter policy"
+### "Test a policy before enforcing"
 
 ```bash
 npx protect-mcp simulate --policy strict.json
 ```
 
-Explain what would change: which tools would be blocked, rate-limited, or require approval.
+### "Enforce the policy"
+
+```bash
+npx protect-mcp --policy strict.json --enforce -- node server.js
+```
+
+### "What's my agent doing?"
+
+```bash
+npx protect-mcp status
+npx protect-mcp digest --today
+```
 
 ### "Generate a compliance report"
 
 ```bash
 npx protect-mcp report --period 30d --format md --output report.md
-```
-
-### "Show my receipts" / "Prove what happened"
-
-```bash
-npx protect-mcp receipts --last 20
 ```
 
 ### "Export an audit bundle"
@@ -112,67 +108,52 @@ npx protect-mcp receipts --last 20
 npx protect-mcp bundle --output audit.json
 ```
 
-### "Verify receipts"
+## Verification
+
+### "Verify this receipt" / "Prove it"
 
 ```bash
 npx @veritasacta/verify --self-test
+npx @veritasacta/verify receipt.json --key <public-key>
 npx @veritasacta/verify audit.json --bundle
 ```
 
-The verifier is MIT-licensed and works offline. No ScopeBlind account needed.
+The verifier is MIT-licensed and works completely offline. No ScopeBlind account,
+no API calls, no trust in ScopeBlind required.
+
+## Red Team Benchmarking
+
+### "Test my policy against attacks"
+
+```bash
+npx @scopeblind/red-team run --suite bronze --dir ./my-agent-pack
+npx @veritasacta/verify battle-bundle.json --bundle
+```
 
 ## Policy Packs
 
-When the user wants a pre-built policy, copy from these templates:
+**Shadow:** `{"tools": {"*": {"rate_limit": "100/hour"}}}`
 
-**Shadow (default):** Log everything, block nothing.
-```json
-{"tools": {"*": {"rate_limit": "100/hour"}}}
-```
+**Email-safe:** `{"tools": {"send_email": {"require_approval": true}, "delete_email": {"block": true}, "*": {"rate_limit": "50/hour"}}}`
 
-**Email-safe:** Read freely, require approval to send, block delete.
-```json
-{"tools": {"send_email": {"require_approval": true}, "reply_email": {"require_approval": true}, "delete_email": {"block": true}, "*": {"rate_limit": "50/hour"}}}
-```
-
-**Web-browsing-safe:** Rate-limit browsing, require approval for forms, block JS execution.
-```json
-{"tools": {"fill_form": {"require_approval": true}, "submit_form": {"require_approval": true}, "execute_javascript": {"block": true}, "*": {"rate_limit": "30/minute"}}}
-```
-
-**Strict:** Block everything except reads.
-```json
-{"tools": {"*": {"block": true}, "read_file": {"rate_limit": "50/minute"}, "search": {"rate_limit": "30/minute"}, "list_directory": {"rate_limit": "30/minute"}}}
-```
+**Strict:** `{"tools": {"*": {"block": true}, "read_file": {"rate_limit": "50/minute"}}}`
 
 ## Progressive Adoption
 
-Guide users through this sequence:
-
-1. **Shadow** — `npx protect-mcp -- node server.js` (see what's happening)
-2. **Simulate** — `npx protect-mcp simulate --policy strict.json` (test before enforcing)
-3. **Enforce** — add `--enforce` flag (control what matters)
-4. **Sign** — `npx protect-mcp init` (produce proof)
-5. **Report** — `npx protect-mcp report --period 30d` (prove compliance)
-
-Each step is independently valuable. No step requires the next.
-
-## Approval Flow
-
-When protect-mcp blocks a tool with `require_approval: true`, it returns a message asking the user to approve. When the user approves:
-
-```bash
-curl -s -X POST http://127.0.0.1:9876/approve \
-  -H 'Content-Type: application/json' \
-  -d '{"request_id":"REQUEST_ID","tool":"TOOL_NAME","mode":"once","nonce":"NONCE"}'
-```
-
-Replace REQUEST_ID, TOOL_NAME, and NONCE with values from the approval prompt. Then retry the tool call.
+1. **Identity** — `npx @scopeblind/passport create --name "MyAgent"`
+2. **Shadow** — `npx protect-mcp -- node server.js`
+3. **Simulate** — `npx protect-mcp simulate --policy strict.json`
+4. **Enforce** — add `--enforce`
+5. **Sign** — `npx protect-mcp init`
+6. **Benchmark** — `npx @scopeblind/red-team run --suite bronze`
+7. **Report** — `npx protect-mcp report --period 30d`
+8. **Verify** — `npx @veritasacta/verify --self-test`
 
 ## Links
 
-- [npm: protect-mcp](https://www.npmjs.com/package/protect-mcp)
+- [protect-mcp](https://www.npmjs.com/package/protect-mcp)
+- [@scopeblind/passport](https://www.npmjs.com/package/@scopeblind/passport)
+- [@veritasacta/verify](https://www.npmjs.com/package/@veritasacta/verify)
 - [Docs](https://scopeblind.com/docs/mcp)
-- [Verify receipts online](https://scopeblind.com/verify)
 - [The Trust Stack](https://scopeblind.com/stack)
-- [GitHub](https://github.com/tomjwxf/scopeblind-gateway)
+- [BlindLLM](https://blindllm.com)
